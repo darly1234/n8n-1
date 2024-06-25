@@ -4,6 +4,7 @@ import type {
 	IDataObject,
 	IExecuteFunctions,
 	INodeExecutionData,
+	INodeInputConfiguration,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
@@ -221,10 +222,13 @@ async function getChain(
 	return Array.isArray(response) ? response : [response];
 }
 
-function getInputs(parameters: IDataObject) {
-	const hasOutputParser = parameters?.hasOutputParser;
-	const inputs = [
-		{ displayName: '', type: NodeConnectionType.Main },
+interface Parameters {
+	hasOutputParser?: boolean;
+}
+
+const inputsExpressionFn = ({ hasOutputParser }: Parameters): INodeInputConfiguration[] => {
+	const inputs: INodeInputConfiguration[] = [
+		{ type: NodeConnectionType.Main },
 		{
 			displayName: 'Model',
 			maxConnections: 1,
@@ -233,13 +237,14 @@ function getInputs(parameters: IDataObject) {
 		},
 	];
 
-	// If `hasOutputParser` is undefined it must be version 1.3 or earlier so we
-	// always add the output parser input
-	if (hasOutputParser === undefined || hasOutputParser === true) {
-		inputs.push({ displayName: 'Output Parser', type: NodeConnectionType.AiOutputParser });
+	if (hasOutputParser !== false) {
+		inputs.push({
+			displayName: 'Output Parser',
+			type: NodeConnectionType.AiOutputParser,
+		});
 	}
 	return inputs;
-}
+};
 
 export class ChainLlm implements INodeType {
 	description: INodeTypeDescription = {
@@ -267,7 +272,7 @@ export class ChainLlm implements INodeType {
 				],
 			},
 		},
-		inputs: `={{ ((parameter) => { ${getInputs.toString()}; return getInputs(parameter) })($parameter) }}`,
+		inputs: `={{(${inputsExpressionFn})($parameter)}}`,
 		outputs: [NodeConnectionType.Main],
 		credentials: [],
 		properties: [

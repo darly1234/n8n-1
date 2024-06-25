@@ -1,14 +1,14 @@
 /* eslint-disable n8n-nodes-base/node-dirname-against-convention */
-import {
-	NodeOperationError,
-	type IExecuteFunctions,
-	type INodeExecutionData,
-	type INodeType,
-	type INodeTypeDescription,
-	type INodeOutputConfiguration,
-	type SupplyData,
-	NodeConnectionType,
+import type {
+	IExecuteFunctions,
+	INodeExecutionData,
+	INodeType,
+	INodeTypeDescription,
+	INodeOutputConfiguration,
+	SupplyData,
+	INodeInputConfiguration,
 } from 'n8n-workflow';
+import { NodeOperationError, NodeConnectionType } from 'n8n-workflow';
 
 // TODO: Add support for execute function. Got already started but got commented out
 
@@ -34,7 +34,8 @@ const connectorTypes = {
 	[NodeConnectionType.AiTool]: 'Tool',
 	[NodeConnectionType.AiVectorStore]: 'Vector Store',
 	[NodeConnectionType.Main]: 'Main',
-};
+} as const;
+type ConnectorType = keyof typeof connectorTypes;
 
 const defaultCodeExecute = `const { PromptTemplate } = require('@langchain/core/prompts');
 
@@ -115,11 +116,46 @@ function getSandbox(
 	return sandbox;
 }
 
+interface Parameters {
+	inputs: {
+		input: Array<{
+			type: ConnectorType;
+			required?: boolean;
+			maxConnections?: number;
+		}>;
+	};
+	outputs: {
+		output: Array<{
+			type: ConnectorType;
+		}>;
+	};
+}
+
+const inputsExpressionFn = (parameters: Parameters): INodeInputConfiguration[] =>
+	parameters.inputs.input.map(({ type, required, maxConnections }) => ({
+		type,
+		required,
+		maxConnections: maxConnections === -1 ? undefined : maxConnections,
+		displayName: type !== NodeConnectionType.Main ? connectorTypes[type] : undefined,
+	}));
+
+const outputsExpressionFn = (parameters: Parameters): INodeOutputConfiguration[] =>
+	parameters.outputs.output.map(({ type }) => ({
+		type,
+		displayName: type !== NodeConnectionType.Main ? connectorTypes[type] : undefined,
+	}));
+
+const connectionTypeOptions = Object.keys(connectorTypes).map((key) => ({
+	name: connectorTypes[key as ConnectorType],
+	value: key,
+}));
+
 export class Code implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'LangChain Code',
 		name: 'code',
 		icon: 'fa:code',
+		iconColor: 'black',
 		group: ['transform'],
 		version: 1,
 		description: 'LangChain Code Node',
@@ -139,12 +175,8 @@ export class Code implements INodeType {
 				],
 			},
 		},
-		inputs: `={{ ((values) => { const connectorTypes = ${JSON.stringify(
-			connectorTypes,
-		)}; return values.map(value => { return { type: value.type, required: value.required, maxConnections: value.maxConnections === -1 ? undefined : value.maxConnections, displayName: connectorTypes[value.type] !== 'Main' ? connectorTypes[value.type] : undefined } } ) })($parameter.inputs.input) }}`,
-		outputs: `={{ ((values) => { const connectorTypes = ${JSON.stringify(
-			connectorTypes,
-		)}; return values.map(value => { return { type: value.type, displayName: connectorTypes[value.type] !== 'Main' ? connectorTypes[value.type] : undefined } } ) })($parameter.outputs.output) }}`,
+		inputs: `={{(${inputsExpressionFn})($parameter)}}`,
+		outputs: `={{(${outputsExpressionFn})($parameter)}}`,
 		properties: [
 			{
 				displayName: 'Code',
@@ -220,10 +252,7 @@ export class Code implements INodeType {
 								displayName: 'Type',
 								name: 'type',
 								type: 'options',
-								options: Object.keys(connectorTypes).map((key) => ({
-									name: connectorTypes[key as keyof typeof connectorTypes],
-									value: key,
-								})),
+								options: connectionTypeOptions,
 								noDataExpression: true,
 								default: '',
 								required: true,
@@ -273,10 +302,7 @@ export class Code implements INodeType {
 								displayName: 'Type',
 								name: 'type',
 								type: 'options',
-								options: Object.keys(connectorTypes).map((key) => ({
-									name: connectorTypes[key as keyof typeof connectorTypes],
-									value: key,
-								})),
+								options: connectionTypeOptions,
 								noDataExpression: true,
 								default: '',
 								required: true,
@@ -307,9 +333,7 @@ export class Code implements INodeType {
 		const sandbox = getSandbox.call(this, code.execute.code, { addItems: true, itemIndex });
 
 		const outputs = this.getNodeOutputs();
-		const mainOutputs: INodeOutputConfiguration[] = outputs.filter(
-			(output) => output.type === NodeConnectionType.Main,
-		);
+		const mainOutputs = outputs.filter((output) => output.type === NodeConnectionType.Main);
 
 		const options = { multiOutput: mainOutputs.length !== 1 };
 

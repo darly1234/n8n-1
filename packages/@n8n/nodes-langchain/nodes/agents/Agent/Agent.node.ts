@@ -1,6 +1,5 @@
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 import type {
-	ConnectionTypes,
 	INodeInputConfiguration,
 	INodeInputFilter,
 	IExecuteFunctions,
@@ -24,48 +23,36 @@ import { sqlAgentAgentExecute } from './agents/SqlAgent/execute';
 import { toolsAgentProperties } from './agents/ToolsAgent/description';
 import { toolsAgentExecute } from './agents/ToolsAgent/execute';
 
-// Function used in the inputs expression to figure out which inputs to
-// display based on the agent type
-function getInputs(
-	agent: 'toolsAgent' | 'conversationalAgent' | 'openAiFunctionsAgent' | 'reActAgent' | 'sqlAgent',
-	hasOutputParser?: boolean,
-): Array<ConnectionTypes | INodeInputConfiguration> {
-	interface SpecialInput {
-		type: ConnectionTypes;
-		filter?: INodeInputFilter;
-		required?: boolean;
-	}
+type AgentType =
+	| 'toolsAgent'
+	| 'conversationalAgent'
+	| 'openAiFunctionsAgent'
+	| 'reActAgent'
+	| 'sqlAgent'
+	| 'planAndExecuteAgent';
 
-	const getInputData = (
-		inputs: SpecialInput[],
-	): Array<ConnectionTypes | INodeInputConfiguration> => {
-		const displayNames: { [key: string]: string } = {
-			[NodeConnectionType.AiLanguageModel]: 'Model',
-			[NodeConnectionType.AiMemory]: 'Memory',
-			[NodeConnectionType.AiTool]: 'Tool',
-			[NodeConnectionType.AiOutputParser]: 'Output Parser',
-		};
+const displayNames: Partial<Record<NodeConnectionType, string>> = {
+	[NodeConnectionType.AiLanguageModel]: 'Model',
+	[NodeConnectionType.AiMemory]: 'Memory',
+	[NodeConnectionType.AiTool]: 'Tool',
+	[NodeConnectionType.AiOutputParser]: 'Output Parser',
+};
 
-		return inputs.map(({ type, filter }) => {
-			const input: INodeInputConfiguration = {
-				type,
-				displayName: type in displayNames ? displayNames[type] : undefined,
-				required: type === NodeConnectionType.AiLanguageModel,
-				maxConnections: [NodeConnectionType.AiLanguageModel, NodeConnectionType.AiMemory].includes(
-					type as NodeConnectionType,
-				)
-					? 1
-					: undefined,
-			};
+interface SpecialInput {
+	type: NodeConnectionType;
+	filter?: INodeInputFilter;
+	required?: boolean;
+}
 
-			if (filter) {
-				input.filter = filter;
-			}
+interface Parameters {
+	agent: AgentType;
+	hasOutputParser?: boolean;
+}
 
-			return input;
-		});
-	};
+const singleInputNodes = [NodeConnectionType.AiLanguageModel, NodeConnectionType.AiMemory];
 
+// Function used in the inputs expression to figure out which inputs to display based on the agent type
+const inputsExpressionFn = ({ agent, hasOutputParser }: Parameters): INodeInputConfiguration[] => {
 	let specialInputs: SpecialInput[] = [];
 
 	if (agent === 'conversationalAgent') {
@@ -178,12 +165,24 @@ function getInputs(
 	}
 
 	if (hasOutputParser === false) {
-		specialInputs = specialInputs.filter(
-			(input) => input.type !== NodeConnectionType.AiOutputParser,
-		);
+		specialInputs = specialInputs.filter(({ type }) => type !== NodeConnectionType.AiOutputParser);
 	}
-	return [NodeConnectionType.Main, ...getInputData(specialInputs)];
-}
+
+	return [
+		{
+			type: NodeConnectionType.Main,
+		},
+		...specialInputs.map(
+			({ type, filter }): INodeInputConfiguration => ({
+				type,
+				displayName: displayNames[type] ?? undefined,
+				required: type === NodeConnectionType.AiLanguageModel,
+				maxConnections: singleInputNodes.includes(type) ? 1 : undefined,
+				filter,
+			}),
+		),
+	];
+};
 
 const agentTypeProperty: INodeProperties = {
 	displayName: 'Agent',
@@ -259,12 +258,7 @@ export class Agent implements INodeType {
 				],
 			},
 		},
-		inputs: `={{
-			((agent, hasOutputParser) => {
-				${getInputs.toString()};
-				return getInputs(agent, hasOutputParser)
-			})($parameter.agent, $parameter.hasOutputParser === undefined || $parameter.hasOutputParser === true)
-		}}`,
+		inputs: `={{(${inputsExpressionFn})($parameter)}}`,
 		outputs: [NodeConnectionType.Main],
 		credentials: [
 			{

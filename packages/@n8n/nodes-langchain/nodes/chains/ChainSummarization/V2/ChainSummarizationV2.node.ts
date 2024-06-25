@@ -5,7 +5,7 @@ import type {
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
-	IDataObject,
+	INodeInputConfiguration,
 } from 'n8n-workflow';
 
 import { loadSummarizationChain } from 'langchain/chains';
@@ -20,11 +20,16 @@ import { REFINE_PROMPT_TEMPLATE, DEFAULT_PROMPT_TEMPLATE } from '../prompt';
 import { getChainPromptsArgs } from '../helpers';
 import { getTracingConfig } from '../../../../utils/tracing';
 
-function getInputs(parameters: IDataObject) {
+interface Parameters {
+	operationMode: 'nodeInputJson' | 'nodeInputBinary' | 'documentLoader';
+	chunkingMode: 'simple' | 'advanced';
+}
+
+const inputsExpressionFn = (parameters: Parameters): INodeInputConfiguration[] => {
 	const chunkingMode = parameters?.chunkingMode;
 	const operationMode = parameters?.operationMode;
 	const inputs = [
-		{ displayName: '', type: NodeConnectionType.Main },
+		{ type: NodeConnectionType.Main },
 		{
 			displayName: 'Model',
 			maxConnections: 1,
@@ -53,7 +58,7 @@ function getInputs(parameters: IDataObject) {
 		return inputs;
 	}
 	return inputs;
-}
+};
 
 export class ChainSummarizationV2 implements INodeType {
 	description: INodeTypeDescription;
@@ -66,8 +71,7 @@ export class ChainSummarizationV2 implements INodeType {
 				name: 'Summarization Chain',
 				color: '#909298',
 			},
-			// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
-			inputs: `={{ ((parameter) => { ${getInputs.toString()}; return getInputs(parameter) })($parameter) }}`,
+			inputs: `={{(${inputsExpressionFn})($parameter)}}`,
 			outputs: [NodeConnectionType.Main],
 			credentials: [],
 			properties: [
