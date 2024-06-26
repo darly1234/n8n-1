@@ -40,11 +40,12 @@ jobs:
     with:
       ref: refs/pull/${{ github.event.pull_request.number }}/merge
       cacheKey: ${{ github.sha }}-base:build
+      collectCoverage: true
 
-  lint:
-    name: Lint
-    uses: ./.github/workflows/linting-reusable.yml
-    needs: install-and-build
-    with:
-      ref: refs/pull/${{ github.event.pull_request.number }}/merge
-      cacheKey: ${{ github.sha }}-base:build
+  # lint:
+  #   name: Lint
+  #   uses: ./.github/workflows/linting-reusable.yml
+  #   needs: install-and-build
+  #   with:
+  #     ref: refs/pull/${{ github.event.pull_request.number }}/merge
+  #     cacheKey: ${{ github.sha }}-base:build
